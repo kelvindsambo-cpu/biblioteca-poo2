@@ -12,6 +12,12 @@ public class MainFrame extends JFrame {
         tabs.addTab("Empréstimos", new JLabel("Módulo de empréstimos por implementar", SwingConstants.CENTER));
         add(tabs);
         setSize(780, 480);
-        setLocationRelativeTo(null);
+        setLocationRelativeTo(null
+
+                              EmprestimoPanel emprestimoPanel = new EmprestimoPanel();
+EmprestimoController emprestimoController = new EmprestimoController(
+        new EmprestimoDAO(), new LivroDAO(), new LeitorDAO(), emprestimoPanel);
+emprestimoController.carregarDados();
+tabs.addTab("Empréstimos", emprestimoPanel);
     }
 }
