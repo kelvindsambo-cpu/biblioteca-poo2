@@ -9,6 +9,9 @@
   </dependencies>
   <build><plugins>
     <plugin><groupId>org.apache.maven.plugins</groupId><artifactId>maven-compiler-plugin</artifactId><version>3.13.0</version></plugin>
-    <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.3.0</version><configuration><mainClass>biblioteca.Main</mainClass></configuration></plugin>
+    <plugin><groupId>org.codehaus.mojo</groupId><artifactId>exec-maven-plugin</artifactId><version>3.3.0</version><configuration><mainClass>biblioteca.Main</mainClass></configuration>
+      <!-- mvn test-compile exec:java@smoke corre o teste dos DAOs contra o MySQL -->
+      <executions><execution><id>smoke</id><configuration><mainClass>biblioteca.dao.DaoSmokeTest</mainClass><classpathScope>test</classpathScope></configuration></execution></executions>
+    </plugin>
   </plugins></build>
 </project>
