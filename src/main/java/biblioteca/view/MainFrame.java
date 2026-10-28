@@ -19,8 +19,7 @@ public class MainFrame extends JFrame {
         LivroPanel livroPainel = new LivroPanel();
         LivroController livroController = new LivroController(new LivroDAO(), livroPainel);
         tabs.addTab("Livros", livroPainel);
-        //tabs.addTab("Livros", new JLabel("Módulo de livros por implementar", SwingConstants.CENTER));
-        //tabs.addTab("Leitores", new JLabel("Módulo de leitores por implementar", SwingConstants.CENTER));
+    
         LeitorPanel leitorPanel = new LeitorPanel();
         LeitorController leitorController = new LeitorController(new LeitorDAO(), leitorPanel);
         tabs.addTab("Leitores", leitorPanel);
@@ -28,14 +27,6 @@ public class MainFrame extends JFrame {
         EmprestimoPanel emprestimoPanel = new EmprestimoPanel();
         EmprestimoController emprestimoController =  new EmprestimoController(new EmprestimoDAO(), new LivroDAO(), new LeitorDAO(), emprestimoPanel);
         tabs.addTab("Empréstimos", emprestimoPanel);
-
-        // Módulo Empréstimos: View + DAOs + Controller
-        /*EmprestimoPanel emprestimoPanel = new EmprestimoPanel();
-        EmprestimoController emprestimoController = new EmprestimoController(
-                new EmprestimoDAO(), new LivroDAO(), new LeitorDAO(), emprestimoPanel);
-        emprestimoController.carregarDados();
-        tabs.addTab("Empréstimos", emprestimoPanel);/* */
-
         livroController.listar();
         emprestimoController.carregarDados();
 
