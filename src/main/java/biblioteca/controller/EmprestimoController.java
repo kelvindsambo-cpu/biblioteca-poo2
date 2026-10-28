@@ -8,6 +8,7 @@ import biblioteca.model.Leitor;
 import biblioteca.model.Livro;
 import biblioteca.view.EmprestimoPanel;
 
+import javax.swing.SwingWorker;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
@@ -39,7 +40,7 @@ public class EmprestimoController {
         view.addFiltroListener(e -> actualizarTabela());
     }
 
-    /** Carrega combos e tabela. Chamar uma vez depois de criar o controller. */
+    /** Carrega combos e tabela sem bloquear a janela. */
     public void carregarDados() {
         actualizarCombos();
         actualizarTabela();
@@ -91,32 +92,61 @@ public class EmprestimoController {
         }
     }
 
+    /** As consultas correm em background e a View é actualizada na EDT. */
     private void actualizarCombos() {
-        try {
-            // O combo de livros só mostra os disponíveis (RN03)
-            List<Livro> disponiveis = new ArrayList<>();
-            for (Livro livro : livroDao.listarTodos()) {
-                if (livro.isDisponivel()) {
-                    disponiveis.add(livro);
+        new SwingWorker<Void, Void>() {
+            private final List<Livro> disponiveis = new ArrayList<>();
+            private List<Leitor> leitores;
+
+            @Override
+            protected Void doInBackground() throws SQLException {
+                // O combo de livros só mostra os disponíveis (RN03)
+                for (Livro livro : livroDao.listarTodos()) {
+                    if (livro.isDisponivel()) {
+                        disponiveis.add(livro);
+                    }
+                }
+                leitores = leitorDao.listarTodos();
+                return null;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    get();
+                    view.mostrarLivros(disponiveis);
+                    view.mostrarLeitores(leitores);
+                } catch (Exception ex) {
+                    view.mostrarErro("Erro ao carregar livros e leitores: " + causa(ex));
                 }
             }
-            view.mostrarLivros(disponiveis);
-            view.mostrarLeitores(leitorDao.listarTodos());
-        } catch (SQLException ex) {
-            view.mostrarErro("Erro ao carregar livros e leitores: " + ex.getMessage());
-        }
+        }.execute();
     }
 
     private void actualizarTabela() {
-        try {
-            if (view.isApenasActivos()) {
-                emprestimosNaTabela = dao.listarActivos();
-            } else {
-                emprestimosNaTabela = dao.listarTodos();
+        boolean apenasActivos = view.isApenasActivos(); // ler a View ainda na EDT
+        new SwingWorker<List<Emprestimo>, Void>() {
+            @Override
+            protected List<Emprestimo> doInBackground() throws SQLException {
+                return apenasActivos ? dao.listarActivos() : dao.listarTodos();
             }
-            view.mostrarEmprestimos(emprestimosNaTabela);
-        } catch (SQLException ex) {
-            view.mostrarErro("Erro ao carregar empréstimos: " + ex.getMessage());
-        }
+
+            @Override
+            protected void done() {
+                try {
+                    // Lista e tabela mudam juntas, para os índices continuarem a corresponder
+                    emprestimosNaTabela = get();
+                    view.mostrarEmprestimos(emprestimosNaTabela);
+                } catch (Exception ex) {
+                    view.mostrarErro("Erro ao carregar empréstimos: " + causa(ex));
+                }
+            }
+        }.execute();
+    }
+
+    // O SwingWorker embrulha a SQLException numa ExecutionException
+    private static String causa(Exception ex) {
+        Throwable t = ex.getCause() != null ? ex.getCause() : ex;
+        return t.getMessage();
     }
 }
