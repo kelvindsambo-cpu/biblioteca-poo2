@@ -10,8 +10,8 @@ Java 17, Swing, MySQL 8+, JDBC (MySQL Connector/J), Maven e `SwingWorker`.
 
 ## Começar
 1. Instalar JDK 17, Maven e MySQL.
-2. Executar `sql/biblioteca.sql` no MySQL.
-3. Configurar as variáveis de ambiente `BIBLIOTECA_DB_URL`, `BIBLIOTECA_DB_USER` e `BIBLIOTECA_DB_PASSWORD` (ver `docs/05_AMBIENTE_E_GITHUB.md`). Não colocar credenciais no Git.
+2. Criar a base de dados e configurar as variáveis de ambiente `BIBLIOTECA_DB_URL`, `BIBLIOTECA_DB_USER` e `BIBLIOTECA_DB_PASSWORD`. No Windows: `powershell -ExecutionPolicy Bypass -File sql\preparar-mysql.ps1` (ver `docs/05_AMBIENTE_E_GITHUB.md`).
+3. Não colocar credenciais no Git.
 4. Na raiz, executar `mvn clean compile` e `mvn exec:java`.
 
 **Estado inicial:** estrutura e documentação, ligação JDBC e janela com separadores vazios. Os módulos ainda não estão implementados.

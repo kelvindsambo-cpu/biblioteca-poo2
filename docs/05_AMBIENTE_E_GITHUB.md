@@ -37,7 +37,20 @@ git push -u origin feature/livros
 Abrir Pull Request da branch para `main` no GitHub; outro membro revê antes de fazer merge. Substituir `feature/livros` pela branch atribuída.
 
 ## Preparar MySQL
-Executar `sql/biblioteca.sql` no Workbench ou CLI. Criar utilizador MySQL próprio com permissões apenas sobre `biblioteca_poo2`, se possível.
+No Windows, o script `sql/preparar-mysql.ps1` faz tudo de uma vez. Na raiz do projecto:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File sql\preparar-mysql.ps1
+```
+
+Pede a password do `root` do MySQL e uma password nova para o utilizador da aplicação. Depois:
+1. cria a base `biblioteca_poo2` (`sql/biblioteca.sql`) e, se for nova, insere os dados de exemplo (`sql/dados_teste.sql`);
+2. cria o utilizador `biblioteca_app` com permissões apenas sobre `biblioteca_poo2`;
+3. guarda as três variáveis da secção seguinte no utilizador do Windows.
+
+Pode ser executado de novo sem duplicar dados, por exemplo para mudar a password. No fim, fechar e voltar a abrir o terminal e o IDE.
+
+Sem o script: executar `sql/biblioteca.sql` e `sql/dados_teste.sql` no Workbench ou CLI, criar um utilizador MySQL próprio com permissões apenas sobre `biblioteca_poo2` e configurar a ligação como abaixo.
 
 ## Configurar ligação
 A aplicação lê as variáveis de ambiente:
