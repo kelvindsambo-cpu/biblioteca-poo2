@@ -24,17 +24,31 @@ public class Leitor {
 
     public String getTelefone() { return telefone; }
 
-    /** Opcional: vazio fica null. Só dígitos, espaços e um "+" no início. */
+    /** Opcional: vazio fica null. Máximo 20 caracteres (tamanho da coluna). */
     public void setTelefone(String telefone) {
         if (telefone == null || telefone.isBlank()) {
             this.telefone = null;
             return;
         }
         String limpo = telefone.trim();
-        if (!limpo.matches("\\+?[\\d ]{6,19}")) {
-            throw new IllegalArgumentException("O telefone só pode ter dígitos e espaços (mínimo 6), com \"+\" opcional no início.");
+        if (limpo.length() > 20) {
+            throw new IllegalArgumentException("O telefone pode ter no máximo 20 caracteres.");
         }
         this.telefone = limpo;
+    }
+
+    /**
+     * Verificação extra feita só no formulário (não ao ler da base, para não rejeitar dados antigos):
+     * dígitos, espaços e hífens, com "+" opcional no início, e pelo menos 6 dígitos.
+     */
+    public static void validarFormatoTelefone(String telefone) {
+        if (telefone == null || telefone.isBlank()) {
+            return;
+        }
+        String limpo = telefone.trim();
+        if (!limpo.matches("\\+?[\\d -]+") || limpo.replaceAll("\\D", "").length() < 6) {
+            throw new IllegalArgumentException("Telefone inválido: use só dígitos (mínimo 6), espaços ou hífens, com \"+\" opcional.");
+        }
     }
 
     @Override

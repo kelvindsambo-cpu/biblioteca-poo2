@@ -38,6 +38,12 @@ try {
     $existia = (Executar-Sql 'root' "SELECT COUNT(*) FROM information_schema.schemata WHERE schema_name = 'biblioteca_poo2';") -eq '1'
     Executar-Sql 'root' "source $pastaSql/biblioteca.sql"
     if ($existia) {
+        # Base da versão 1 (sem a coluna livro.capa): acrescentar prazos, multas e capas
+        $temCapa = (Executar-Sql 'root' "SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = 'biblioteca_poo2' AND table_name = 'livro' AND column_name = 'capa';") -eq '1'
+        if (-not $temCapa) {
+            Executar-Sql 'root' "source $pastaSql/actualizar-v2.sql"
+            Write-Host 'Base da versão 1 actualizada para a versão 2 (prazos, multas, reservas, capas, login).'
+        }
         Write-Host 'A base biblioteca_poo2 já existia: tabelas verificadas, dados de exemplo NÃO inseridos de novo.'
     } else {
         Executar-Sql 'root' "source $pastaSql/dados_teste.sql"
