@@ -46,6 +46,18 @@ Pode ser executado de novo sem duplicar dados, por exemplo para mudar a password
 
 Sem o script (Linux, macOS, ou sem PowerShell): executar `sql/biblioteca.sql` e `sql/dados_teste.sql` no Workbench ou CLI, criar um utilizador MySQL próprio com `SELECT, INSERT, UPDATE, DELETE` apenas sobre `biblioteca_poo2` e configurar a ligação como abaixo.
 
+### Actualizar da versão 1 para a versão 2
+Quem já tinha a base da versão 1 só precisa de correr o script outra vez. O script detecta a base antiga (sem a coluna `livro.capa`) e:
+- aplica `sql/actualizar-v2.sql`, que acrescenta os prazos, as multas e as capas;
+- cria as tabelas `reserva` e `funcionario`;
+- cria o utilizador `admin` / `admin123`.
+
+Os dados existentes mantêm-se. Os empréstimos antigos ficam com prazo de 14 dias.
+
+Sem o script, executar no MySQL, por esta ordem: `sql/biblioteca.sql` e depois `sql/actualizar-v2.sql` (uma só vez).
+
+Para recomeçar com os dados de exemplo da versão 2 (10 livros com capa, um atraso, uma multa e uma reserva), apagar a base com `DROP DATABASE biblioteca_poo2;` e correr o script de novo.
+
 ## Configurar ligação
 A aplicação lê as variáveis de ambiente:
 - `BIBLIOTECA_DB_URL` — por exemplo `jdbc:mysql://localhost:3306/biblioteca_poo2`
@@ -68,6 +80,7 @@ Na raiz do projecto:
 |---|---|
 | `mvn clean compile` | Compilar. Fazer sempre antes de um commit. |
 | `mvn exec:java` | Abrir a aplicação. |
+| `mvn test` | Testes JUnit das regras, sem base de dados. |
 | `mvn test-compile exec:java@smoke` | Testar os DAOs contra o MySQL (ver [06](06_TESTES_APRESENTACAO.md)). |
 
 No IDE, também se pode correr `biblioteca.Main` directamente (botão ▶). O IDE tem de ter sido aberto **depois** de configurar as variáveis.

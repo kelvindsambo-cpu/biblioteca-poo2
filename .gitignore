@@ -6,3 +6,6 @@ target/
 .env
 *.iml
 .DS_Store
+
+# Capas escolhidas pelos funcionários (dados locais, como a base)
+/capas/

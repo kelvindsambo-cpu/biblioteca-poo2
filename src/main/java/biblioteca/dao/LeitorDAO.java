@@ -2,6 +2,7 @@ package biblioteca.dao;
 
 import biblioteca.database.ConnectionFactory;
 import biblioteca.model.Leitor;
+import biblioteca.model.RegraNegocioException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -47,24 +48,25 @@ public class LeitorDAO implements LeitorRepository {
     }
 
     @Override
-    public void remover(int id) throws SQLException {
+    public void remover(int id) throws SQLException, RegraNegocioException {
         try (Connection con = ConnectionFactory.abrir()) {
-            // RN09: leitor com histórico de empréstimos não pode ser eliminado.
-            try (PreparedStatement ps = con.prepareStatement(
-                    "SELECT COUNT(*) FROM emprestimo WHERE leitor_id = ?")) {
-                ps.setInt(1, id);
-                try (ResultSet rs = ps.executeQuery()) {
-                    rs.next();
-                    if (rs.getInt(1) > 0) {
-                        throw new SQLException("Não é possível remover: o leitor tem empréstimos registados.");
-                    }
-                }
+            // RN09: leitor com histórico de empréstimos ou reservas não pode ser eliminado.
+            if (LivroDAO.contar(con, "SELECT COUNT(*) FROM emprestimo WHERE leitor_id = ?", id) > 0) {
+                throw new RegraNegocioException("Este leitor tem histórico de empréstimos e não pode ser removido.");
+            }
+            if (LivroDAO.contar(con, "SELECT COUNT(*) FROM reserva WHERE leitor_id = ?", id) > 0) {
+                throw new RegraNegocioException("Este leitor tem reservas registadas e não pode ser removido.");
             }
             try (PreparedStatement ps = con.prepareStatement("DELETE FROM leitor WHERE id = ?")) {
                 ps.setInt(1, id);
                 if (ps.executeUpdate() == 0) {
                     throw new SQLException("Leitor não encontrado (ID " + id + ").");
                 }
+            } catch (SQLException e) {
+                if (e.getErrorCode() == 1451) { // chave estrangeira
+                    throw new RegraNegocioException("Este leitor tem histórico e não pode ser removido.");
+                }
+                throw e;
             }
         }
     }
@@ -104,7 +106,7 @@ public class LeitorDAO implements LeitorRepository {
         }
     }
 
-    private Leitor mapear(ResultSet rs) throws SQLException {
+    static Leitor mapear(ResultSet rs) throws SQLException {
         return new Leitor(
                 rs.getInt("id"),
                 rs.getString("nome"),

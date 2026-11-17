@@ -1,11 +1,16 @@
 package biblioteca.controller;
+
 import biblioteca.dao.LivroRepository;
 import biblioteca.model.Livro;
+import biblioteca.util.ArquivoCapas;
 import biblioteca.view.LivroPanel;
-import javax.swing.SwingWorker;
-import java.sql.SQLException;
-import java.util.List;
 
+import java.io.File;
+
+/**
+ * Liga o LivroPanel ao LivroRepository.
+ * Todas as operações na base correm em fundo (Tarefa/SwingWorker): a janela nunca congela.
+ */
 public class LivroController {
 
     private final LivroRepository dao;
@@ -19,181 +24,119 @@ public class LivroController {
         view.aoEditar(this::editar);
         view.aoRemover(this::remover);
         view.aoLimpar(view::limparCampos);
-        view.aoPesquisar(() -> pesquisar(view.getTextoPesquisa()));
-
-        listar();
+        view.aoPesquisar(this::pesquisar);
     }
-
-    // LISTAR TODOS OS LIVROS
 
     public void listar() {
-        new SwingWorker<List<Livro>, Void>() {
-
-            @Override
-            protected List<Livro> doInBackground() throws Exception {
-                return dao.listarTodos();
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    view.mostrarLivros(get());
-                } catch (Exception ex) {
-                    view.mostrarErro("Não foi possível carregar os livros.");
-                }
-            }
-
-        }.execute();
+        Tarefa.emFundo(dao::listarTodos, view::mostrarLivros,
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível carregar os livros.", erro)));
     }
 
-    // REGISTAR LIVRO
-
-    public void registar() {
-        if (!dadosValidos()) {
+    private void pesquisar() {
+        String texto = view.getTextoPesquisa();
+        if (texto.isEmpty()) {
+            listar();
             return;
         }
-
-        Livro livro = new Livro(
-                0,
-                view.getTitulo(),
-                view.getAutor(),
-                true
-        );
-
-        try {
-            dao.inserir(livro);
-
-            view.mostrarMensagem("Livro registado com sucesso.");
-            view.limparCampos();
-
-            listar();
-
-        } catch (SQLException ex) { view.mostrarErro("Não foi possível registar o livro." );
-        }
+        Tarefa.emFundo(() -> dao.pesquisar(texto), view::mostrarLivros,
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível pesquisar os livros.", erro)));
     }
 
-    // EDITAR LIVRO
+    private void registar() {
+        Livro livro = lerFormulario(0);
+        if (livro == null) {
+            return;
+        }
+        File capaNova = view.getFicheiroCapaNovo();
+        Tarefa.emFundo(() -> {
+                    guardarCapa(livro, capaNova);
+                    return dao.inserir(livro);
+                },
+                id -> {
+                    view.mostrarMensagem("Livro registado com sucesso (ID " + id + ").");
+                    view.limparCampos();
+                    listar();
+                },
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível registar o livro.", erro)));
+    }
 
-    public void editar() {
+    private void editar() {
         int id = view.getIdSeleccionado();
-
         if (id == 0) {
-            view.mostrarErro(
-                    "Seleccione um livro na tabela para editar.");
+            view.mostrarErro("Seleccione um livro na tabela para editar.");
             return;
         }
-
-        if (!dadosValidos()) {
+        Livro livro = lerFormulario(id);
+        if (livro == null) {
             return;
         }
-
-        Livro livro = new Livro(
-                id,
-                view.getTitulo(),
-                view.getAutor(),
-                true
-        );
-
-        try {
-            dao.actualizar(livro);
-
-            view.mostrarMensagem(
-                    "Dados do livro actualizados com sucesso.");
-
-            view.limparCampos();
-            listar();
-
-        } catch (SQLException ex) {
-            view.mostrarErro(
-                    "Não foi possível actualizar o livro." );
-        }
+        File capaNova = view.getFicheiroCapaNovo();
+        Tarefa.emFundo(() -> {
+                    guardarCapa(livro, capaNova);
+                    dao.actualizar(livro);
+                    return null;
+                },
+                nada -> {
+                    view.mostrarMensagem("Dados do livro actualizados com sucesso.");
+                    view.limparCampos();
+                    listar();
+                },
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível actualizar o livro.", erro)));
     }
 
-    // REMOVER LIVRO
-
-    public void remover() {
+    private void remover() {
         int id = view.getIdSeleccionado();
-
         if (id == 0) {
-            view.mostrarErro(
-                    "Seleccione um livro na tabela para remover.");
+            view.mostrarErro("Seleccione um livro na tabela para remover.");
             return;
         }
-
-        if (!view.confirmar(
-                "Deseja realmente remover este livro?")) {
+        if (!view.confirmar("Deseja realmente remover este livro?")) {
             return;
         }
+        Tarefa.emFundo(() -> {
+                    dao.remover(id); // RN08 é verificada no DAO
+                    return null;
+                },
+                nada -> {
+                    view.mostrarMensagem("Livro removido com sucesso.");
+                    view.limparCampos();
+                    listar();
+                },
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível remover o livro.", erro)));
+    }
 
+    /**
+     * Cria o Livro a partir do formulário. As regras (RN01, ISBN, ano) estão nos setters do modelo;
+     * se algum valor for inválido mostra a mensagem e devolve null.
+     */
+    private Livro lerFormulario(int id) {
         try {
-            dao.remover(id);
-
-            view.mostrarMensagem(
-                    "Livro removido com sucesso.");
-
-            view.limparCampos();
-            listar();
-
-        } catch (SQLException ex) {
-            String mensagem = ex.getMessage();
-
-            boolean temHistorico =
-                    ex.getErrorCode() == 1451
-                    || (mensagem != null
-                    && mensagem.startsWith("Não é possível remover"));
-
-            if (temHistorico) {
-                view.mostrarErro(
-                        "Este livro possui histórico de empréstimos " + "e não pode ser removido." );
-            } else {
-        view.mostrarErro( "Não foi possível remover o livro." );
-            }
+            Livro livro = new Livro(id, view.getTitulo(), view.getAutor(), true);
+            livro.setIsbn(view.getIsbn());
+            livro.setAno(converterAno(view.getAno()));
+            livro.setCapa(view.getCapaActual());
+            return livro;
+        } catch (IllegalArgumentException ex) {
+            view.mostrarErro(ex.getMessage());
+            return null;
         }
     }
 
-    // PESQUISAR LIVROS
-
-    public void pesquisar(String texto) {
-        if (texto == null || texto.trim().isEmpty()) {
-            listar();
-            return;
+    private static Integer converterAno(String texto) {
+        if (texto.isEmpty()) {
+            return null;
         }
-
-        new SwingWorker<List<Livro>, Void>() {
-
-            @Override
-            protected List<Livro> doInBackground() throws Exception {
-                return dao.pesquisar(texto.trim());
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    view.mostrarLivros(get());
-                } catch (Exception ex) {
-                    view.mostrarErro( "Não foi possível pesquisar os livros."  );
-                }
-            }
-
-        }.execute();
+        try {
+            return Integer.parseInt(texto);
+        } catch (NumberFormatException ex) {
+            throw new IllegalArgumentException("O ano deve ser um número, por exemplo 1992.");
+        }
     }
 
-    // VALIDAR OS DADOS DO FORMULÁRIO
-
-    private boolean dadosValidos() {
-        if (view.getTitulo().isEmpty()) {
-            view.mostrarErro("O título do livro é obrigatório.");
-            return false;
+    /** Corre em fundo: copiar o ficheiro é uma operação de disco. */
+    private static void guardarCapa(Livro livro, File capaNova) throws java.io.IOException {
+        if (capaNova != null) {
+            livro.setCapa(ArquivoCapas.guardar(capaNova));
         }
-
-        if (view.getAutor().isEmpty()) {
-            view.mostrarErro( "O autor do livro é obrigatório.");
-            return false;
-        }
-
-        return true;
     }
 }
-
-
-

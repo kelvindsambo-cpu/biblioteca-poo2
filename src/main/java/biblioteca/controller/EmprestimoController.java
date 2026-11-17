@@ -3,44 +3,48 @@ package biblioteca.controller;
 import biblioteca.dao.EmprestimoRepository;
 import biblioteca.dao.LeitorRepository;
 import biblioteca.dao.LivroRepository;
+import biblioteca.dao.ReservaRepository;
 import biblioteca.model.Emprestimo;
 import biblioteca.model.Leitor;
 import biblioteca.model.Livro;
+import biblioteca.model.Reserva;
 import biblioteca.view.EmprestimoPanel;
 
-import javax.swing.SwingWorker;
-import java.sql.SQLException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Liga o EmprestimoPanel aos repositórios.
- * Não escreve SQL: tudo passa pelas interfaces Repository.
+ * Liga o EmprestimoPanel aos repositórios. Não escreve SQL: tudo passa pelas interfaces Repository.
+ * As regras (RN03 a RN16) são garantidas pelo DAO dentro de transacções; aqui só se mostram os resultados.
  */
 public class EmprestimoController {
+
+    private static final DateTimeFormatter DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
 
     private final EmprestimoRepository dao;
     private final LivroRepository livroDao;
     private final LeitorRepository leitorDao;
+    private final ReservaRepository reservaDao;
     private final EmprestimoPanel view;
 
-    // Lista que está agora na tabela; o índice da linha seleccionada corresponde ao índice aqui
-    private List<Emprestimo> emprestimosNaTabela = new ArrayList<>();
-
-    public EmprestimoController(EmprestimoRepository dao, LivroRepository livroDao,
-                                LeitorRepository leitorDao, EmprestimoPanel view) {
+    public EmprestimoController(EmprestimoRepository dao, LivroRepository livroDao, LeitorRepository leitorDao,
+                                ReservaRepository reservaDao, EmprestimoPanel view) {
         this.dao = dao;
         this.livroDao = livroDao;
         this.leitorDao = leitorDao;
+        this.reservaDao = reservaDao;
         this.view = view;
 
-        // Liga cada botão ao método correspondente
-        view.addEmprestarListener(e -> emprestar());
-        view.addDevolverListener(e -> devolver());
-        view.addFiltroListener(e -> actualizarTabela());
+        view.aoEmprestar(this::emprestar);
+        view.aoDevolver(this::devolver);
+        view.aoPagarMulta(this::pagarMulta);
+        view.aoPesquisar(this::actualizarTabela);
+        view.aoMudarFiltro(this::actualizarTabela);
     }
 
-    /** Carrega combos e tabela sem bloquear a janela. */
+    /** Carrega listas e tabela sem bloquear a janela. */
     public void carregarDados() {
         actualizarCombos();
         actualizarTabela();
@@ -49,7 +53,6 @@ public class EmprestimoController {
     private void emprestar() {
         Livro livro = view.getLivroSeleccionado();
         Leitor leitor = view.getLeitorSeleccionado();
-
         if (livro == null) {
             view.mostrarErro("Seleccione um livro disponível.");
             return;
@@ -58,95 +61,113 @@ public class EmprestimoController {
             view.mostrarErro("Seleccione um leitor.");
             return;
         }
-
-        try {
-            dao.emprestar(livro.getId(), leitor.getId()); // RN03, RN04, RN05 ficam no DAO
-            view.mostrarMensagem("Empréstimo registado.");
-            carregarDados(); // o livro deixa de estar disponível
-        } catch (SQLException ex) {
-            view.mostrarErro("Não foi possível emprestar: " + ex.getMessage());
-            carregarDados(); // o estado pode ter mudado (ex.: outro posto emprestou o livro)
-        }
+        int prazo = view.getPrazo();
+        Tarefa.emFundo(() -> dao.emprestar(livro.getId(), leitor.getId(), prazo),
+                id -> {
+                    view.mostrarMensagem("Empréstimo registado: \"" + livro.getTitulo() + "\" para "
+                            + leitor.getNome() + ".\nDevolver até " + LocalDate.now().plusDays(prazo).format(DATA) + ".");
+                    carregarDados(); // o livro deixa de estar disponível
+                },
+                erro -> {
+                    view.mostrarErro(Tarefa.mensagem("Não foi possível emprestar.", erro));
+                    carregarDados(); // o estado pode ter mudado (ex.: outro posto emprestou o livro)
+                });
     }
 
     private void devolver() {
-        int linha = view.getLinhaSeleccionada();
-        if (linha < 0) {
+        Emprestimo emprestimo = view.getEmprestimoSeleccionado();
+        if (emprestimo == null) {
             view.mostrarErro("Seleccione um empréstimo na tabela.");
             return;
         }
-
-        Emprestimo emprestimo = emprestimosNaTabela.get(linha);
-        if (emprestimo.getDataDevolucao() != null) { // RN07
+        if (!emprestimo.isActivo()) { // RN07
             view.mostrarErro("Este empréstimo já foi devolvido.");
             return;
         }
-
-        try {
-            dao.devolver(emprestimo.getId()); // RN06 e RN10 ficam no DAO
-            view.mostrarMensagem("Devolução registada.");
-            carregarDados(); // o livro volta a estar disponível
-        } catch (SQLException ex) {
-            view.mostrarErro("Não foi possível devolver: " + ex.getMessage());
-            carregarDados();
-        }
+        int livroId = emprestimo.getLivro().getId();
+        // Em fundo: devolve, e vê se alguém está à espera deste livro. Devolve o texto a mostrar.
+        Tarefa.emFundo(() -> {
+                    int multa = dao.devolver(emprestimo.getId());
+                    Reserva reserva = reservaDao.procurarActivaPorLivro(livroId);
+                    String texto = "Devolução registada.";
+                    if (multa > 0) {
+                        texto += "\nMulta por atraso: " + multa + " " + Emprestimo.MOEDA
+                                + ". Use \"Registar pagamento de multa\" quando o leitor pagar.";
+                    }
+                    if (reserva != null) {
+                        texto += "\nAtenção: este livro está reservado para " + reserva.getLeitor().getNome()
+                                + ". Guarde-o para esse leitor.";
+                    }
+                    return texto;
+                },
+                texto -> {
+                    view.mostrarMensagem(texto);
+                    carregarDados(); // o livro volta a estar disponível
+                },
+                erro -> {
+                    view.mostrarErro(Tarefa.mensagem("Não foi possível devolver.", erro));
+                    carregarDados();
+                });
     }
 
-    /** As consultas correm em background e a View é actualizada na EDT. */
+    private void pagarMulta() {
+        Emprestimo emprestimo = view.getEmprestimoSeleccionado();
+        if (emprestimo == null) {
+            view.mostrarErro("Seleccione um empréstimo na tabela.");
+            return;
+        }
+        if (emprestimo.isActivo()) {
+            view.mostrarErro("O livro ainda não foi devolvido: a multa só fica definida na devolução.");
+            return;
+        }
+        if (!emprestimo.temMultaPorPagar()) {
+            view.mostrarErro("Este empréstimo não tem multa por pagar.");
+            return;
+        }
+        if (!view.confirmar("Confirmar o pagamento de " + emprestimo.getMulta() + " " + Emprestimo.MOEDA
+                + " por " + emprestimo.getLeitor().getNome() + "?")) {
+            return;
+        }
+        Tarefa.emFundo(() -> {
+                    dao.pagarMulta(emprestimo.getId());
+                    return null;
+                },
+                nada -> {
+                    view.mostrarMensagem("Pagamento registado.");
+                    actualizarTabela();
+                },
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível registar o pagamento.", erro)));
+    }
+
     private void actualizarCombos() {
-        new SwingWorker<Void, Void>() {
-            private final List<Livro> disponiveis = new ArrayList<>();
-            private List<Leitor> leitores;
-
-            @Override
-            protected Void doInBackground() throws SQLException {
-                // O combo de livros só mostra os disponíveis (RN03)
-                for (Livro livro : livroDao.listarTodos()) {
-                    if (livro.isDisponivel()) {
-                        disponiveis.add(livro);
+        Tarefa.emFundo(() -> {
+                    // A lista de livros só mostra os disponíveis (RN03)
+                    List<Livro> disponiveis = new ArrayList<>();
+                    for (Livro livro : livroDao.listarTodos()) {
+                        if (livro.isDisponivel()) {
+                            disponiveis.add(livro);
+                        }
                     }
-                }
-                leitores = leitorDao.listarTodos();
-                return null;
-            }
+                    return disponiveis;
+                },
+                view::mostrarLivros,
+                erro -> view.mostrarErro(Tarefa.mensagem("Erro ao carregar os livros.", erro)));
 
-            @Override
-            protected void done() {
-                try {
-                    get();
-                    view.mostrarLivros(disponiveis);
-                    view.mostrarLeitores(leitores);
-                } catch (Exception ex) {
-                    view.mostrarErro("Erro ao carregar livros e leitores: " + causa(ex));
-                }
-            }
-        }.execute();
+        Tarefa.emFundo(leitorDao::listarTodos, view::mostrarLeitores,
+                erro -> view.mostrarErro(Tarefa.mensagem("Erro ao carregar os leitores.", erro)));
     }
 
     private void actualizarTabela() {
-        boolean apenasActivos = view.isApenasActivos(); // ler a View ainda na EDT
-        new SwingWorker<List<Emprestimo>, Void>() {
-            @Override
-            protected List<Emprestimo> doInBackground() throws SQLException {
-                return apenasActivos ? dao.listarActivos() : dao.listarTodos();
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    // Lista e tabela mudam juntas, para os índices continuarem a corresponder
-                    emprestimosNaTabela = get();
-                    view.mostrarEmprestimos(emprestimosNaTabela);
-                } catch (Exception ex) {
-                    view.mostrarErro("Erro ao carregar empréstimos: " + causa(ex));
-                }
-            }
-        }.execute();
-    }
-
-    // O SwingWorker embrulha a SQLException numa ExecutionException
-    private static String causa(Exception ex) {
-        Throwable t = ex.getCause() != null ? ex.getCause() : ex;
-        return t.getMessage();
+        // Ler a View ainda na EDT, antes de passar para a thread de fundo
+        boolean apenasActivos = view.isApenasActivos();
+        String texto = view.getTextoPesquisa();
+        Tarefa.emFundo(() -> {
+                    if (!texto.isEmpty()) {
+                        return dao.pesquisar(texto, apenasActivos);
+                    }
+                    return apenasActivos ? dao.listarActivos() : dao.listarTodos();
+                },
+                view::mostrarEmprestimos,
+                erro -> view.mostrarErro(Tarefa.mensagem("Erro ao carregar empréstimos.", erro)));
     }
 }

@@ -1,83 +1,88 @@
 package biblioteca.controller;
 
+import biblioteca.dao.EmprestimoRepository;
 import biblioteca.dao.LeitorRepository;
 import biblioteca.model.Leitor;
 import biblioteca.view.LeitorPanel;
- 
-import javax.swing.SwingWorker;
-import java.sql.SQLException;
-import java.util.List;
- 
+
+/** Liga o LeitorPanel aos repositórios de leitores e de empréstimos (para o histórico). */
 public class LeitorController {
- 
+
     private final LeitorRepository dao;
+    private final EmprestimoRepository emprestimos;
     private final LeitorPanel view;
- 
-    public LeitorController(LeitorRepository dao, LeitorPanel view) {
+
+    public LeitorController(LeitorRepository dao, EmprestimoRepository emprestimos, LeitorPanel view) {
         this.dao = dao;
+        this.emprestimos = emprestimos;
         this.view = view;
- 
+
         view.aoRegistar(this::registar);
         view.aoEditar(this::editar);
         view.aoRemover(this::remover);
         view.aoLimpar(view::limparCampos);
- 
-        listar();
+        view.aoSeleccionarLeitor(this::carregarHistorico);
     }
- 
-    /** A consulta corre em background e a View é actualizada na EDT. */
+
     public void listar() {
-        new SwingWorker<List<Leitor>, Void>() {
-            @Override
-            protected List<Leitor> doInBackground() throws SQLException {
-                return dao.listarTodos();
-            }
- 
-            @Override
-            protected void done() {
-                try {
-                    view.mostrarLeitores(get());
-                } catch (Exception ex) {
-                    view.mostrarErro("Não foi possível carregar os leitores.");
-                }
-            }
-        }.execute();
+        Tarefa.emFundo(dao::listarTodos, view::mostrarLeitores,
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível carregar os leitores.", erro)));
     }
- 
-    public void registar() {
-        if (!nomeValido()) {
+
+    private void carregarHistorico() {
+        Leitor leitor = view.getLeitorSeleccionado();
+        if (leitor == null) {
+            view.limparHistorico();
             return;
         }
-        try {
-            dao.inserir(new Leitor(0, view.getNome(), telefoneOuNull()));
-            view.mostrarMensagem("Leitor registado com sucesso.");
-            view.limparCampos();
-            listar();
-        } catch (SQLException ex) {
-            view.mostrarErro("Não foi possível registar o leitor.");
-        }
+        int id = leitor.getId();
+        Tarefa.emFundo(() -> emprestimos.listarPorLeitor(id),
+                lista -> {
+                    // Se entretanto o funcionário escolheu outro leitor, esta resposta já não interessa
+                    if (view.getIdSeleccionado() == id) {
+                        view.mostrarHistorico(leitor.getNome(), lista);
+                    }
+                },
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível carregar o histórico.", erro)));
     }
- 
-    public void editar() {
+
+    private void registar() {
+        Leitor leitor = lerFormulario(0);
+        if (leitor == null) {
+            return;
+        }
+        Tarefa.emFundo(() -> dao.inserir(leitor),
+                id -> {
+                    view.mostrarMensagem("Leitor registado com sucesso.");
+                    view.limparCampos();
+                    listar();
+                },
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível registar o leitor.", erro)));
+    }
+
+    private void editar() {
         int id = view.getIdSeleccionado();
         if (id == 0) {
             view.mostrarErro("Seleccione um leitor na tabela para editar.");
             return;
         }
-        if (!nomeValido()) {
+        Leitor leitor = lerFormulario(id);
+        if (leitor == null) {
             return;
         }
-        try {
-            dao.actualizar(new Leitor(id, view.getNome(), telefoneOuNull()));
-            view.mostrarMensagem("Dados actualizados.");
-            view.limparCampos();
-            listar();
-        } catch (SQLException ex) {
-            view.mostrarErro("Não foi possível actualizar o leitor.");
-        }
+        Tarefa.emFundo(() -> {
+                    dao.actualizar(leitor);
+                    return null;
+                },
+                nada -> {
+                    view.mostrarMensagem("Dados actualizados.");
+                    view.limparCampos();
+                    listar();
+                },
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível actualizar o leitor.", erro)));
     }
- 
-    public void remover() {
+
+    private void remover() {
         int id = view.getIdSeleccionado();
         if (id == 0) {
             view.mostrarErro("Seleccione um leitor na tabela para remover.");
@@ -86,34 +91,26 @@ public class LeitorController {
         if (!view.confirmar("Deseja mesmo remover este leitor?")) {
             return;
         }
+        Tarefa.emFundo(() -> {
+                    dao.remover(id); // RN09 é verificada no DAO
+                    return null;
+                },
+                nada -> {
+                    view.mostrarMensagem("Leitor removido.");
+                    view.limparCampos();
+                    listar();
+                },
+                erro -> view.mostrarErro(Tarefa.mensagem("Não foi possível remover o leitor.", erro)));
+    }
+
+    /** Validação no modelo (RN02); devolve null e mostra a mensagem se algo estiver errado. */
+    private Leitor lerFormulario(int id) {
         try {
-            dao.remover(id);
-            view.mostrarMensagem("Leitor removido.");
-            view.limparCampos();
-            listar();
-        } catch (SQLException ex) {
-            String msg = ex.getMessage();
-            boolean temHistorico = ex.getErrorCode() == 1451
-                    || (msg != null && msg.startsWith("Não é possível remover"));
-            if (temHistorico) {
-                // Leitor com histórico não pode ser eliminado
-                view.mostrarErro("Este leitor tem histórico de empréstimos e não pode ser removido.");
-            } else {
-                view.mostrarErro("Não foi possível remover o leitor.");
-            }
+            Leitor.validarFormatoTelefone(view.getTelefone());
+            return new Leitor(id, view.getNome(), view.getTelefone());
+        } catch (IllegalArgumentException ex) {
+            view.mostrarErro(ex.getMessage());
+            return null;
         }
-    }
- 
-    private boolean nomeValido() {
-        if (view.getNome().isEmpty()) {
-            view.mostrarErro("O nome do leitor é obrigatório.");
-            return false;
-        }
-        return true;
-    }
- 
-    private String telefoneOuNull() {
-        String telefone = view.getTelefone();
-        return telefone.isEmpty() ? null : telefone;
     }
 }
