@@ -12,7 +12,7 @@ Construir uma aplicação desktop funcional e demonstrável para a disciplina de
 - Leitores: adicionar, listar, editar e remover quando não existir histórico.
 - Empréstimos: registar, devolver, listar activos e consultar histórico.
 
-**Versão 2 (aprovada pelo grupo)**
+**Versão 2**
 - Entrada na aplicação com utilizador e password; alteração da password.
 - Prazo de devolução por empréstimo, detecção de atrasos e multa de 10 MT por dia.
 - Leitores com atrasos ou multas por pagar não podem levar livros.
@@ -40,4 +40,4 @@ Vários níveis de permissão entre funcionários, múltiplas bibliotecas, envio
 - Testes automáticos (JUnit) das regras.
 
 ## Limite de dimensão
-Cinco tabelas, cinco separadores e um controller por separador. Novas funcionalidades exigem consenso do grupo.
+Cinco tabelas, cinco separadores e um controller por separador.
