@@ -30,7 +30,7 @@ public class MainFrame extends JFrame {
     private final Botao btnSair = new Botao("Sair", new Color(0x3A2F2A), new Color(0x5A4038), Color.WHITE);
 
     public MainFrame(Funcionario funcionario) {
-        super("Biblioteca POO II");
+        super("Biblioteca UEM");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
         // ---- Painéis e controllers (cada controller recebe os repositórios de que precisa) ----
